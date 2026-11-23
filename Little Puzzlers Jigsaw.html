@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Little Puzzlers — Jigsaw Adventure</title>
+
+  <!-- PWA & Fullscreen Mobile Web App Meta Tags -->
+  <meta name="theme-color" content="#FF9F1C" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Jigsaw" />
+  <link id="pwa-manifest" rel="manifest" />
+  <link id="apple-touch-icon" rel="apple-touch-icon" />
+
+  <!-- Tailwind CSS for responsive layout & clean controls -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Friendly rounded typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* Toddler-proof viewport & gesture lock */
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      font-family: 'Fredoka', system-ui, -apple-system, sans-serif;
+      background-color: #FFF8EB;
+      color: #2D3142;
+    }
+
+    #puzzle-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: grab;
+    }
+
+    #puzzle-canvas:active {
+      cursor: grabbing;
+    }
+
+    /* Tactile chunky button styling for little fingers */
+    .chunky-btn {
+      min-height: 48px;
+      border-radius: 16px;
+      font-weight: 600;
+      transition: transform 0.1s ease, box-shadow 0.1s ease, background-color 0.15s ease;
+      box-shadow: 0 4px 0 rgba(45, 49, 66, 0.16);
+    }
+
+    .chunky-btn:active {
+      transform: translateY(3px);
+      box-shadow: 0 1px 0 rgba(45, 49, 66, 0.16);
+    }
+
+    /* Custom subtle scrollbar inside the picture picker modal */
+    .gallery-scroll::-webkit-scrollbar {
+      width: 8px;
+    }
+    .gallery-scroll::-webkit-scrollbar-thumb {
+      background: #F4A261;
+      border-radius: 9999px;
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0.82); opacity: 0; }
+      75% { transform: scale(1.04); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .animate-pop {
+      animation: popIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen w-screen bg-[#FFF8EB]">
+
+  <!-- Top Toolbar -->
+  <header id="top-bar" class="flex-none bg-white/95 backdrop-blur-sm border-b-2 border-amber-200 px-2.5 py-2 sm:px-4 z-20 shadow-sm">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+
+      <!-- Left: Picture Chooser & Shuffle -->
+      <div class="flex items-center gap-2">
+        <button id="btn-gallery" type="button" class="chunky-btn bg-amber-400 hover:bg-amber-300 text-slate-900 px-3.5 sm:px-4 flex items-center gap-2 text-base sm:text-lg" aria-label="Choose Picture">
+          <span class="text-xl" aria-hidden="true">🖼️</span>
+          <span>Pictures</span>
+        </button>
+
+        <button id="btn-restart" type="button" class="chunky-btn bg-sky-100 hover:bg-sky-200 text-sky-900 px-3 flex items-center gap-1.5 text-base" title="Shuffle Pieces" aria-label="Shuffle Pieces">
+          <span class="text-xl" aria-hidden="true">🔄</span>
+          <span class="hidden md:inline">Shuffle</span>
+        </button>
+      </div>
+
+      <!-- Centre: Extensible Piece-Count Difficulty Selector -->
+      <div id="difficulty-group" class="flex items-center gap-1.5 sm:gap-2 bg-amber-100/80 p-1 rounded-2xl border border-amber-200" role="group" aria-label="Number of pieces">
+        <!-- Populated dynamically from GRID_PRESETS -->
+      </div>
+
+      <!-- Right: Toggleable Ghost Guide & Sound Toggle -->
+      <div class="flex items-center gap-2">
+        <button id="btn-guide" type="button" class="chunky-btn bg-emerald-500 text-white px-3.5 sm:px-4 flex items-center gap-1.5 text-base sm:text-lg" aria-pressed="true">
+          <span class="text-xl" aria-hidden="true">👁️</span>
+          <span>Hint / Guide</span>
+        </button>
+
+        <button id="btn-sound" type="button" class="chunky-btn bg-purple-100 hover:bg-purple-200 text-purple-900 px-3 flex items-center justify-center text-xl" title="Toggle Sound" aria-label="Toggle Sound" aria-pressed="true">
+          🔊
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Interactive Puzzle Arena -->
+  <main id="canvas-wrapper" class="relative flex-1 w-full h-full overflow-hidden">
+    <canvas id="puzzle-canvas"></canvas>
+
+    <!-- Non-intrusive Toast Notification -->
+    <div id="toast-box" class="pointer-events-none fixed bottom-5 left-1/2 -translate-x-1/2 z-40 hidden">
+      <div id="toast-text" class="bg-slate-800/95 text-white px-5 py-3 rounded-2xl shadow-lg text-base font-medium"></div>
+    </div>
+
+    <!-- Victory Celebration Overlay -->
+    <div id="victory-overlay" class="hidden absolute inset-0 z-30 flex items-center justify-center bg-slate-900/35 backdrop-blur-[2px] p-4">
+      <div class="animate-pop bg-white border-4 border-amber-400 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl">
+        <div class="text-6xl mb-2" aria-hidden="true">🎉🌟🎉</div>
+        <h2 class="text-3xl sm:text-4xl font-bold text-slate-800 mb-2">Hooray!</h2>
+        <p class="text-lg text-slate-600 mb-6">You completed the puzzle!</p>
+        <div class="flex flex-col sm:flex-row gap-3 justify-center">
+          <button id="btn-play-again" type="button" class="chunky-btn bg-emerald-500 hover:bg-emerald-400 text-white text-xl px-6 py-3 flex-1 flex items-center justify-center gap-2">
+            <span>🔄</span>
+            <span>Play Again</span>
+          </button>
+          <button id="btn-next-pic" type="button" class="chunky-btn bg-amber-400 hover:bg-amber-300 text-slate-900 text-xl px-6 py-3 flex-1 flex items-center justify-center gap-2">
+            <span>🖼️</span>
+            <span>New Picture</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Picture Gallery & Custom Photo Modal -->
+  <div id="gallery-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-3 sm:p-6">
+    <div class="animate-pop bg-white border-4 border-amber-300 rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between px-5 py-4 bg-amber-50 border-b-2 border-amber-200">
+        <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 flex items-center gap-2">
+          <span>🎨</span>
+          <span>Choose a Picture</span>
+        </h2>
+        <button id="btn-close-gallery" type="button" class="chunky-btn bg-rose-100 hover:bg-rose-200 text-rose-800 px-4 text-lg font-bold" aria-label="Close Picture Gallery">
+          ✕ Close
+        </button>
+      </div>
+
+      <!-- Modal Content -->
+      <div class="p-4 sm:p-6 overflow-y-auto gallery-scroll space-y-6">
+        <!-- Upload Your Own Photo Section -->
+        <div class="bg-sky-50 border-2 border-dashed border-sky-300 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div class="text-center sm:text-left">
+            <h3 class="text-lg font-bold text-sky-950">Use Your Own Family Photo</h3>
+            <p class="text-sm text-sky-800">Saved privately on this device so it works offline too!</p>
+          </div>
+          <label class="chunky-btn bg-sky-500 hover:bg-sky-400 text-white px-5 py-3 cursor-pointer flex items-center gap-2 text-lg shrink-0">
+            <span class="text-xl">📸</span>
+            <span>Add Photo</span>
+            <input id="input-photo" type="file" accept="image/*" class="hidden" />
+          </label>
+        </div>
+
+        <!-- Custom Saved Photos Grid (shown when custom photos exist) -->
+        <div id="custom-photos-section" class="hidden space-y-3">
+          <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2">
+            <span>📷</span>
+            <span>Your Saved Photos</span>
+          </h3>
+          <div id="custom-photos-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4"></div>
+        </div>
+
+        <!-- Built-in Cheerful Illustrations Grid -->
+        <div class="space-y-3">
+          <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2">
+            <span>✨</span>
+            <span>Fun Pictures</span>
+          </h3>
+          <div id="builtin-photos-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==========================================================================
+         1. EXTENSIBLE CONFIGURATION & STATE
+         ========================================================================== */
+
+      // Easily append more presets later (e.g. { label: '64 pcs', cols: 8, rows: 8 })
+      const GRID_PRESETS = [
+        { label: '4 pcs',  cols: 2, rows: 2 },
+        { label: '9 pcs',  cols: 3, rows: 3 },
+        { label: '16 pcs', cols: 4, rows: 4 },
+        { label: '36 pcs', cols: 6, rows: 6 }
+      ];
+
+      const STORAGE_KEYS = {
+        CUSTOM_PHOTOS: 'little_puzzlers_custom_photos_v1',
+        GUIDE_ENABLED: 'little_puzzlers_guide_enabled_v1',
+        SOUND_ENABLED: 'little_puzzlers_sound_enabled_v1',
+        PRESET_INDEX:  'little_puzzlers_preset_index_v1'
+      };
+
+      const state = {
+        presetIndex: 0,
+        showGhostGuide: true,
+        soundEnabled: true,
+        currentImage: null,       // Loaded HTMLImageElement
+        currentImageId: 'dino',
+        pieces: [],               // Array of Piece objects
+        draggingPiece: null,
+        dragOffsetX: 0,
+        dragOffsetY: 0,
+        activePointerId: null,
+        boardRect: { x: 0, y: 0, w: 300, h: 300 },
+        trayRect:  { x: 0, y: 0, w: 300, h: 150 },
+        isLandscape: true,
+        isSolved: false,
+        confetti: [],
+        animFrameId: null,
+        customPhotos: []          // Array of { id, name, dataUrl }
+      };
+
+      /* ==========================================================================
+         2. DOM REFERENCES & CANVAS SETUP
+         ========================================================================== */
+      const canvas = document.getElementById('puzzle-canvas');
+      const ctx = canvas.getContext('2d');
+      const wrapper = document.getElementById('canvas-wrapper');
+      const difficultyGroup = document.getElementById('difficulty-group');
+      const btnGuide = document.getElementById('btn-guide');
+      const btnSound = document.getElementById('btn-sound');
+      const btnGallery = document.getElementById('btn-gallery');
+      const btnRestart = document.getElementById('btn-restart');
+      const victoryOverlay = document.getElementById('victory-overlay');
+      const btnPlayAgain = document.getElementById('btn-play-again');
+      const btnNextPic = document.getElementById('btn-next-pic');
+      const galleryModal = document.getElementById('gallery-modal');
+      const btnCloseGallery = document.getElementById('btn-close-gallery');
+      const inputPhoto = document.getElementById('input-photo');
+      const builtinGrid = document.getElementById('builtin-photos-grid');
+      const customSection = document.getElementById('custom-photos-section');
+      const customGrid = document.getElementById('custom-photos-grid');
+      const toastBox = document.getElementById('toast-box');
+      const toastText = document.getElementById('toast-text');
+
+      let toastTimer = null;
+      function showToast(message) {
+        toastText.textContent = message;
+        toastBox.classList.remove('hidden');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          toastBox.classList.add('hidden');
+        }, 2800);
+      }
+
+      /* ==========================================================================
+         3. WEB AUDIO API SYNTHESISER (NO EXTERNAL AUDIO FILES)
+         ========================================================================== */
+      let audioCtx = null;
+
+      function ensureAudioContext() {
+        if (!state.soundEnabled) return null;
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+        return audioCtx;
+      }
+
+      function playPickSound() {
+        const ac = ensureAudioContext();
+        if (!ac) return;
+        const now = ac.currentTime;
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(360, now);
+        osc.frequency.exponentialRampToValueAtTime(480, now + 0.07);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        osc.connect(gain);
+        gain.connect(ac.destination);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      }
+
+      function playSnapChime() {
+        const ac = ensureAudioContext();
+        if (!ac) return;
+        const now = ac.currentTime;
+        // Pleasant two-note major fifth chime
+        [523.25, 783.99].forEach((freq, idx) => {
+          const osc = ac.createOscillator();
+          const gain = ac.createGain();
+          osc.type = 'triangle';
+          const start = now + idx * 0.055;
+          osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0.001, start);
+          gain.gain.linearRampToValueAtTime(0.16, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+          osc.connect(gain);
+          gain.connect(ac.destination);
+          osc.start(start);
+          osc.stop(start + 0.36);
+        });
+      }
+
+      function playVictoryMelody() {
+        const ac = ensureAudioContext();
+        if (!ac) return;
+        const now = ac.currentTime;
+        // Cheerful C-major arpeggio fanfare
+        const notes = [
+          { freq: 523.25, time: 0.00, dur: 0.16 }, // C5
+          { freq: 659.25, time: 0.13, dur: 0.16 }, // E5
+          { freq: 783.99, time: 0.26, dur: 0.16 }, // G5
+          { freq: 1046.50, time: 0.40, dur: 0.45 } // C6
+        ];
+        notes.forEach(n => {
+          const osc = ac.createOscillator();
+          const gain = ac.createGain();
+          osc.type = 'triangle';
+          const t = now + n.time;
+          osc.frequency.setValueAtTime(n.freq, t);
+          gain.gain.setValueAtTime(0.001, t);
+          gain.gain.linearRampToValueAtTime(0.18, t + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + n.dur);
+          osc.connect(gain);
+          gain.connect(ac.destination);
+          osc.start(t);
+          osc.stop(t + n.dur + 0.02);
+        });
+      }
+
+      /* ==========================================================================
+         4. BUILT-IN PROCEDURAL SVG ILLUSTRATIONS (ZERO EXTERNAL URLS)
+         ========================================================================== */
+      function svgToDataUrl(svgString) {
+        return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString.trim());
+      }
+
+      const BUILTIN_ARTWORKS = [
+        {
+          id: 'dino',
+          name: 'Friendly Dino',
+          dataUrl: svgToDataUrl(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+              <defs>
+                <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#7BDFF2"/>
+                  <stop offset="100%" stop-color="#EFF7F6"/>
+                </linearGradient>
+              </defs>
+              <rect width="800" height="800" fill="url(#sky)"/>
+              <!-- Sun -->
+              <circle cx="130" cy="130" r="68" fill="#FFD166"/>
+              <circle cx="130" cy="130" r="52" fill="#FFE66D"/>
+              <!-- Fluffy Clouds -->
+              <g fill="#FFFFFF" opacity="0.9">
+                <circle cx="540" cy="130" r="42"/><circle cx="585" cy="120" r="52"/><circle cx="635" cy="135" r="40"/>
+                <circle cx="290" cy="190" r="30"/><circle cx="325" cy="182" r="38"/><circle cx="360" cy="192" r="28"/>
+              </g>
+              <!-- Distant Volcano / Hills -->
+              <path d="M0 620 Q200 470 420 620 T800 580 L800 800 L0 800 Z" fill="#95D5B2"/>
+              <path d="M0 670 Q260 560 540 660 T800 640 L800 800 L0 800 Z" fill="#52B788"/>
+              <!-- Spikes on Dino Back -->
+              <polygon points="240,420 205,385 255,375" fill="#FF9F1C"/>
+              <polygon points="230,480 185,455 235,435" fill="#FF9F1C"/>
+              <polygon points="245,545 195,535 235,500" fill="#FF9F1C"/>
+              <polygon points="285,600 245,610 265,565" fill="#FF9F1C"/>
+              <!-- Dino Tail & Body -->
+              <path d="M210 620 Q110 610 95 535 Q145 565 235 565 Z" fill="#4ECDC4"/>
+              <ellipse cx="375" cy="545" rx="145" ry="125" fill="#4ECDC4"/>
+              <ellipse cx="410" cy="560" rx="95" ry="85" fill="#A8F9FF"/>
+              <!-- Dino Neck & Head -->
+              <path d="M390 460 Q415 270 465 230 L545 255 Q515 390 485 495 Z" fill="#4ECDC4"/>
+              <ellipse cx="520" cy="240" rx="95" ry="72" fill="#4ECDC4"/>
+              <!-- Cute Spots -->
+              <circle cx="315" cy="495" r="18" fill="#2EC4B6"/>
+              <circle cx="285" cy="555" r="14" fill="#2EC4B6"/>
+              <circle cx="450" cy="340" r="13" fill="#2EC4B6"/>
+              <!-- Legs -->
+              <rect x="285" y="625" width="52" height="85" rx="24" fill="#2EC4B6"/>
+              <rect x="410" y="630" width="55" height="85" rx="24" fill="#4ECDC4"/>
+              <!-- Happy Face -->
+              <circle cx="545" cy="222" r="18" fill="#FFFFFF"/>
+              <circle cx="550" cy="222" r="10" fill="#2D3142"/>
+              <circle cx="554" cy="218" r="4" fill="#FFFFFF"/>
+              <circle cx="575" cy="252" r="14" fill="#FF8FA3" opacity="0.7"/>
+              <path d="M535 268 Q565 292 595 262" fill="none" stroke="#2D3142" stroke-width="7" stroke-linecap="round"/>
+              <!-- Flowers -->
+              <circle cx="140" cy="720" r="14" fill="#FF6B6B"/><circle cx="140" cy="720" r="6" fill="#FFE66D"/>
+              <circle cx="670" cy="710" r="16" fill="#FF9F1C"/><circle cx="670" cy="710" r="7" fill="#FFFFFF"/>
+            </svg>
+          `)
+        },
+        {
+          id: 'rocket',
+          name: 'Space Rocket',
+          dataUrl: svgToDataUrl(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+              <defs>
+                <linearGradient id="space" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#1D1E4E"/>
+                  <stop offset="100%" stop-color="#3D348B"/>
+                </linearGradient>
+              </defs>
+              <rect width="800" height="800" fill="url(#space)"/>
+              <!-- Twinkling Stars -->
+              <g fill="#FFE66D">
+                <circle cx="120" cy="140" r="8"/><circle cx="680" cy="150" r="10"/>
+                <circle cx="170" cy="610" r="9"/><circle cx="650" cy="630" r="8"/>
+                <circle cx="410" cy="95" r="7"/><circle cx="710" cy="390" r="6"/>
+                <polygon points="240,110 247,130 268,130 251,142 257,162 240,150 223,162 229,142 212,130 233,130"/>
+                <polygon points="610,490 616,506 633,506 619,516 624,532 610,522 596,532 601,516 587,506 604,506"/>
+              </g>
+              <!-- Ringed Planet -->
+              <circle cx="155" cy="320" r="58" fill="#FF9F1C"/>
+              <ellipse cx="155" cy="320" rx="105" ry="22" transform="rotate(-22 155 320)" fill="none" stroke="#FFD166" stroke-width="14"/>
+              <!-- Crescent Moon -->
+              <circle cx="645" cy="210" r="48" fill="#F4F1DE"/>
+              <circle cx="665" cy="198" r="42" fill="#2B266D"/>
+              <!-- Rocket Group (tilted slightly) -->
+              <g transform="translate(400,415) rotate(28)">
+                <!-- Flame -->
+                <path d="M-45 145 Q0 275 45 145 Z" fill="#FF5400"/>
+                <path d="M-26 145 Q0 225 26 145 Z" fill="#FFD166"/>
+                <!-- Side Fins -->
+                <path d="M-75 55 L-135 145 L-65 130 Z" fill="#EF476F"/>
+                <path d="M75 55 L135 145 L65 130 Z" fill="#EF476F"/>
+                <!-- Rocket Body -->
+                <path d="M-80 135 C-95 -20 -55 -135 0 -195 C55 -135 95 -20 80 135 Z" fill="#FFFFFF"/>
+                <!-- Nose Cone -->
+                <path d="M-48 -112 C-28 -155 -12 -180 0 -195 C12 -180 28 -155 48 -112 Z" fill="#EF476F"/>
+                <!-- Bottom Thruster -->
+                <rect x="-52" y="132" width="104" height="22" rx="8" fill="#5C677D"/>
+                <!-- Porthole Window -->
+                <circle cx="0" cy="-15" r="46" fill="#00BBF9"/>
+                <circle cx="0" cy="-15" r="35" fill="#90E0EF"/>
+                <circle cx="-12" cy="-26" r="10" fill="#FFFFFF" opacity="0.85"/>
+              </g>
+            </svg>
+          `)
+        },
+        {
+          id: 'rainbow',
+          name: 'Sunny Rainbow',
+          dataUrl: svgToDataUrl(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+              <rect width="800" height="800" fill="#BCE7FD"/>
+              <!-- Happy Sun -->
+              <circle cx="640" cy="155" r="75" fill="#FFD166"/>
+              <circle cx="622" cy="145" r="8" fill="#2D3142"/>
+              <circle cx="658" cy="145" r="8" fill="#2D3142"/>
+              <path d="M622 172 Q640 190 658 172" fill="none" stroke="#2D3142" stroke-width="6" stroke-linecap="round"/>
+              <!-- Rainbow Arcs -->
+              <g fill="none" stroke-linecap="round">
+                <path d="M90 560 A310 310 0 0 1 710 560" stroke="#FF595E" stroke-width="34"/>
+                <path d="M124 560 A276 276 0 0 1 676 560" stroke="#FF924C" stroke-width="34"/>
+                <path d="M158 560 A242 242 0 0 1 642 560" stroke="#FFCA3A" stroke-width="34"/>
+                <path d="M192 560 A208 208 0 0 1 608 560" stroke="#8AC926" stroke-width="34"/>
+                <path d="M226 560 A174 174 0 0 1 574 560" stroke="#1982C4" stroke-width="34"/>
+                <path d="M260 560 A140 140 0 0 1 540 560" stroke="#6A4C93" stroke-width="34"/>
+              </g>
+              <!-- Rolling Green Hills -->
+              <path d="M0 540 Q220 460 460 555 T800 520 L800 800 L0 800 Z" fill="#80ED99"/>
+              <path d="M0 610 Q340 520 620 620 T800 600 L800 800 L0 800 Z" fill="#57CC99"/>
+              <!-- Fluffy Clouds at Rainbow Ends -->
+              <g fill="#FFFFFF">
+                <circle cx="105" cy="560" r="45"/><circle cx="155" cy="548" r="55"/><circle cx="205" cy="565" r="42"/>
+                <circle cx="595" cy="565" r="42"/><circle cx="645" cy="548" r="55"/><circle cx="695" cy="560" r="45"/>
+              </g>
+              <!-- Little Cottage & Tree -->
+              <rect x="335" y="595" width="110" height="90" rx="8" fill="#FFF3B0"/>
+              <polygon points="320,600 390,535 460,600" fill="#E63946"/>
+              <rect x="375" y="635" width="30" height="50" rx="4" fill="#9C6644"/>
+            </svg>
+          `)
+        },
+        {
+          id: 'cat',
+          name: 'Playful Kitten',
+          dataUrl: svgToDataUrl(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+              <rect width="800" height="800" fill="#FFE5EC"/>
+              <!-- Soft Polka Dots -->
+              <g fill="#FFC2D1">
+                <circle cx="120" cy="130" r="24"/><circle cx="680" cy="140" r="28"/>
+                <circle cx="130" cy="650" r="30"/><circle cx="690" cy="640" r="24"/>
+                <circle cx="400" cy="95" r="20"/>
+              </g>
+              <!-- Floor Cushion -->
+              <ellipse cx="400" cy="685" rx="285" ry="75" fill="#A2D2FF"/>
+              <!-- Cat Tail -->
+              <path d="M510 590 Q645 565 630 455 Q620 410 590 430 Q575 445 592 475 Q600 525 495 545 Z" fill="#FF9F1C"/>
+              <!-- Cat Body -->
+              <ellipse cx="400" cy="545" rx="135" ry="135" fill="#FF9F1C"/>
+              <ellipse cx="400" cy="565" rx="82" ry="95" fill="#FFF3B0"/>
+              <!-- Cat Ears -->
+              <polygon points="265,330 250,185 355,260" fill="#FF9F1C"/>
+              <polygon points="278,308 268,215 335,265" fill="#FF8FA3"/>
+              <polygon points="535,330 550,185 445,260" fill="#FF9F1C"/>
+              <polygon points="522,308 532,215 465,265" fill="#FF8FA3"/>
+              <!-- Cat Head -->
+              <ellipse cx="400" cy="355" rx="155" ry="130" fill="#FF9F1C"/>
+              <!-- Forehead Stripes -->
+              <rect x="391" y="232" width="18" height="38" rx="9" fill="#E85D04"/>
+              <rect x="362" y="242" width="15" height="30" rx="7" fill="#E85D04"/>
+              <rect x="423" y="242" width="15" height="30" rx="7" fill="#E85D04"/>
+              <!-- Big Cute Eyes -->
+              <circle cx="340" cy="345" r="28" fill="#2D3142"/>
+              <circle cx="348" cy="336" r="10" fill="#FFFFFF"/>
+              <circle cx="460" cy="345" r="28" fill="#2D3142"/>
+              <circle cx="468" cy="336" r="10" fill="#FFFFFF"/>
+              <!-- Pink Nose & Smile -->
+              <polygon points="386,385 414,385 400,402" fill="#FF5D8F"/>
+              <path d="M370 412 Q385 430 400 405 Q415 430 430 412" fill="none" stroke="#2D3142" stroke-width="6" stroke-linecap="round"/>
+              <!-- Whiskers -->
+              <g stroke="#2D3142" stroke-width="5" stroke-linecap="round">
+                <line x1="225" y1="365" x2="290" y2="375"/>
+                <line x1="225" y1="398" x2="290" y2="395"/>
+                <line x1="575" y1="365" x2="510" y2="375"/>
+                <line x1="575" y1="398" x2="510" y2="395"/>
+              </g>
+              <!-- Yarn Ball -->
+              <circle cx="215" cy="655" r="46" fill="#FF595E"/>
+              <path d="M180 640 Q215 620 250 645 M176 665 Q215 645 254 670 M195 620 Q215 660 200 695" fill="none" stroke="#FFCA3A" stroke-width="5"/>
+            </svg>
+          `)
+        }
+      ];
+
+      /* ==========================================================================
+         5. INTERLOCKING JIGSAW PIECE GEOMETRY (BEZIER TABS & BLANKS)
+         ========================================================================== */
+
+      /**
+       * Draws a single jigsaw edge from (x1, y1) to (x2, y2).
+       * tabType: 0 = flat border, 1 = outward tab, -1 = inward blank
+       */
+      function drawJigsawEdge(context, x1, y1, x2, y2, tabType) {
+        if (tabType === 0) {
+          context.lineTo(x2, y2);
+          return;
+        }
+
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.hypot(dx, dy);
+        // Unit tangent along edge
+        const ux = dx / len;
+        const uy = dy / len;
+        // Unit outward normal (pointing right-hand side of vector p1->p2, which is outward for clockwise winding)
+        const nx = uy * tabType;
+        const ny = -ux * tabType;
+
+        const tabSize = len * 0.21;
+
+        const p = (t, n) => ({
+          x: x1 + ux * (len * t) + nx * (tabSize * n),
+          y: y1 + uy * (len * t) + ny * (tabSize * n)
+        });
+
+        const p1 = p(0.36, 0.0);
+        const c1 = p(0.42, 0.05);
+        const c2 = p(0.33, 0.55);
+        const p2 = p(0.37, 0.82);
+
+        const c3 = p(0.41, 1.08);
+        const c4 = p(0.59, 1.08);
+        const p3 = p(0.63, 0.82);
+
+        const c5 = p(0.67, 0.55);
+        const c6 = p(0.58, 0.05);
+        const p4 = p(0.64, 0.0);
+
+        context.lineTo(p1.x, p1.y);
+        context.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y);
+        context.bezierCurveTo(c3.x, c3.y, c4.x, c4.y, p3.x, p3.y);
+        context.bezierCurveTo(c5.x, c5.y, c6.x, c6.y, p4.x, p4.y);
+        context.lineTo(x2, y2);
+      }
+
+      /**
+       * Traces the complete closed clockwise path of a jigsaw piece whose top-left
+       * core rectangle sits at (ox, oy) with dimensions (pw, ph).
+       */
+      function tracePiecePath(context, ox, oy, pw, ph, edges) {
+        context.beginPath();
+        context.moveTo(ox, oy);
+        drawJigsawEdge(context, ox, oy, ox + pw, oy, edges.top);
+        drawJigsawEdge(context, ox + pw, oy, ox + pw, oy + ph, edges.right);
+        drawJigsawEdge(context, ox + pw, oy + ph, ox, oy + ph, edges.bottom);
+        drawJigsawEdge(context, ox, oy + ph, ox, oy, edges.left);
+        context.closePath();
+      }
+
+      /* ==========================================================================
+         6. RESPONSIVE LAYOUT & PUZZLE GENERATION
+         ========================================================================== */
+
+      function computeLayoutZones() {
+        const rect = wrapper.getBoundingClientRect();
+        const W = Math.max(300, rect.width);
+        const H = Math.max(300, rect.height);
+        const imgAspect = state.currentImage
+          ? (state.currentImage.naturalWidth || 800) / (state.currentImage.naturalHeight || 800)
+          : 1;
+
+        state.isLandscape = W >= H * 1.05;
+        const pad = Math.max(14, Math.min(W, H) * 0.03);
+
+        if (state.isLandscape) {
+          // Board on the left (~56% width), spacious piece tray on the right (~40% width)
+          const availBoardW = W * 0.54 - pad * 1.5;
+          const availBoardH = H - pad * 2;
+          let bw = availBoardW;
+          let bh = bw / imgAspect;
+          if (bh > availBoardH) {
+            bh = availBoardH;
+            bw = bh * imgAspect;
+          }
+          const bx = pad + (availBoardW - bw) * 0.5;
+          const by = pad + (availBoardH - bh) * 0.5;
+          state.boardRect = { x: bx, y: by, w: bw, h: bh };
+
+          const tx = W * 0.56 + pad * 0.5;
+          const tw = W - tx - pad;
+          state.trayRect = { x: tx, y: pad, w: tw, h: H - pad * 2 };
+        } else {
+          // Portrait: Board on top (~54% height), piece tray on bottom (~42% height)
+          const availBoardW = W - pad * 2;
+          const availBoardH = H * 0.53 - pad * 1.5;
+          let bw = availBoardW;
+          let bh = bw / imgAspect;
+          if (bh > availBoardH) {
+            bh = availBoardH;
+            bw = bh * imgAspect;
+          }
+          const bx = pad + (availBoardW - bw) * 0.5;
+          const by = pad + (availBoardH - bh) * 0.5;
+          state.boardRect = { x: bx, y: by, w: bw, h: bh };
+
+          const ty = H * 0.55 + pad * 0.5;
+          const th = H - ty - pad;
+          state.trayRect = { x: pad, y: ty, w: W - pad * 2, h: th };
+        }
+      }
+
+      /**
+       * Arranges unplaced pieces neatly inside the tray area in a shuffled grid
+       * with slight organic jitter so nothing goes off-screen or covers the board,
+       * even at 36+ pieces.
+       */
+      function scatterPiecesInTray(piecesToScatter) {
+        if (!piecesToScatter.length) return;
+        const { x: tx, y: ty, w: tw, h: th } = state.trayRect;
+        const count = piecesToScatter.length;
+
+        // Shuffle order
+        const shuffled = [...piecesToScatter];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        // Choose grid cols/rows matching tray aspect ratio
+        const trayAspect = tw / Math.max(1, th);
+        let tCols = Math.max(1, Math.round(Math.sqrt(count * trayAspect)));
+        let tRows = Math.max(1, Math.ceil(count / tCols));
+        while (tCols * tRows < count) tCols++;
+
+        const cellW = tw / tCols;
+        const cellH = th / tRows;
+
+        shuffled.forEach((piece, idx) => {
+          const c = idx % tCols;
+          const r = Math.floor(idx / tCols);
+          const margin = piece.pw * 0.22;
+          const slotCenterX = tx + (c + 0.5) * cellW;
+          const slotCenterY = ty + (r + 0.5) * cellH;
+
+          const jitterX = (Math.random() - 0.5) * Math.max(0, cellW - piece.pw * 0.7) * 0.35;
+          const jitterY = (Math.random() - 0.5) * Math.max(0, cellH - piece.ph * 0.7) * 0.35;
+
+          let px = slotCenterX - piece.pw * 0.5 + jitterX;
+          let py = slotCenterY - piece.ph * 0.5 + jitterY;
+
+          // Clamp strictly within tray bounds including tab protrusion allowance
+          px = Math.max(tx + margin, Math.min(tx + tw - piece.pw - margin, px));
+          py = Math.max(ty + margin, Math.min(ty + th - piece.ph - margin, py));
+
+          piece.x = px;
+          piece.y = py;
+        });
+      }
+
+      function buildPuzzle() {
+        if (!state.currentImage) return;
+        state.isSolved = false;
+        state.confetti = [];
+        victoryOverlay.classList.add('hidden');
+
+        computeLayoutZones();
+        const preset = GRID_PRESETS[state.presetIndex] || GRID_PRESETS[0];
+        const { cols, rows } = preset;
+        const { x: bx, y: by, w: bw, h: bh } = state.boardRect;
+
+        const pw = bw / cols;
+        const ph = bh / rows;
+
+        // Generate interlocking edge signs: +1 tab, -1 blank, 0 flat border
+        const hEdges = Array.from({ length: rows + 1 }, () => Array(cols).fill(0));
+        const vEdges = Array.from({ length: rows }, () => Array(cols + 1).fill(0));
+
+        for (let r = 1; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            hEdges[r][c] = Math.random() < 0.5 ? 1 : -1;
+          }
+        }
+        for (let r = 0; r < rows; r++) {
+          for (let c = 1; c < cols; c++) {
+            vEdges[r][c] = Math.random() < 0.5 ? 1 : -1;
+          }
+        }
+
+        const pieces = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const targetX = bx + c * pw;
+            const targetY = by + r * ph;
+            pieces.push({
+              id: `${r}-${c}`,
+              row: r,
+              col: c,
+              pw,
+              ph,
+              targetX,
+              targetY,
+              x: targetX,
+              y: targetY,
+              locked: false,
+              snapAnim: 0,
+              edges: {
+                top:    r === 0        ? 0 : -hEdges[r][c],
+                bottom: r === rows - 1 ? 0 :  hEdges[r + 1][c],
+                left:   c === 0        ? 0 : -vEdges[r][c],
+                right:  c === cols - 1 ? 0 :  vEdges[r][c + 1]
+              }
+            });
+          }
+        }
+
+        state.pieces = pieces;
+        scatterPiecesInTray(pieces);
+        render();
+      }
+
+      /**
+       * Keeps piece positions and sizes proportional if device rotates or resizes mid-game.
+       */
+      function handleResize() {
+        const rect = wrapper.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 3);
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        if (!state.pieces.length) {
+          computeLayoutZones();
+          render();
+          return;
+        }
+
+        const oldBoard = { ...state.boardRect };
+        const oldTray = { ...state.trayRect };
+        computeLayoutZones();
+
+        const preset = GRID_PRESETS[state.presetIndex] || GRID_PRESETS[0];
+        const newPw = state.boardRect.w / preset.cols;
+        const newPh = state.boardRect.h / preset.rows;
+
+        state.pieces.forEach(p => {
+          p.pw = newPw;
+          p.ph = newPh;
+          p.targetX = state.boardRect.x + p.col * newPw;
+          p.targetY = state.boardRect.y + p.row * newPh;
+
+          if (p.locked) {
+            p.x = p.targetX;
+            p.y = p.targetY;
+          } else {
+            // Map relative position from old tray/canvas into new tray bounds
+            const relX = (p.x - oldTray.x) / Math.max(1, oldTray.w);
+            const relY = (p.y - oldTray.y) / Math.max(1, oldTray.h);
+            const margin = newPw * 0.22;
+            p.x = Math.max(
+              state.trayRect.x + margin,
+              Math.min(state.trayRect.x + state.trayRect.w - newPw - margin, state.trayRect.x + relX * state.trayRect.w)
+            );
+            p.y = Math.max(
+              state.trayRect.y + margin,
+              Math.min(state.trayRect.y + state.trayRect.h - newPh - margin, state.trayRect.y + relY * state.trayRect.h)
+            );
+          }
+        });
+
+        render();
+      }
+
+      /* ==========================================================================
+         7. CANVAS RENDERING (HIGH-DPI BOARD, GHOST GUIDE, BEVELLED PIECES)
+         ========================================================================== */
+
+      function drawRoundedRect(context, x, y, w, h, r) {
+        const radius = Math.min(r, w / 2, h / 2);
+        context.beginPath();
+        context.moveTo(x + radius, y);
+        context.arcTo(x + w, y, x + w, y + h, radius);
+        context.arcTo(x + w, y + h, x, y + h, radius);
+        context.arcTo(x, y + h, x, y, radius);
+        context.arcTo(x, y, x + w, y, radius);
+        context.closePath();
+      }
+
+      function drawSinglePiece(piece, isDragged) {
+        const { x, y, pw, ph, col, row, edges, locked } = piece;
+        const { x: bx, y: by, w: bw, h: bh } = state.boardRect;
+
+        ctx.save();
+
+        // Subtle pulse scale right after snapping into place
+        if (piece.snapAnim > 0) {
+          const cx = x + pw * 0.5;
+          const cy = y + ph * 0.5;
+          const scale = 1 + Math.sin(piece.snapAnim * Math.PI) * 0.08;
+          ctx.translate(cx, cy);
+          ctx.scale(scale, scale);
+          ctx.translate(-cx, -cy);
+        }
+
+        // Drop shadow for loose / dragged pieces
+        if (!locked) {
+          ctx.save();
+          tracePiecePath(ctx, x, y, pw, ph, edges);
+          ctx.shadowColor = isDragged ? 'rgba(45, 49, 66, 0.36)' : 'rgba(45, 49, 66, 0.22)';
+          ctx.shadowBlur = isDragged ? 18 : 8;
+          ctx.shadowOffsetX = isDragged ? 4 : 2;
+          ctx.shadowOffsetY = isDragged ? 10 : 4;
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Clip to jigsaw shape and draw corresponding image region
+        ctx.save();
+        tracePiecePath(ctx, x, y, pw, ph, edges);
+        ctx.clip();
+
+        // Offset the full image relative to this piece's current position
+        const imgDrawX = x - col * pw;
+        const imgDrawY = y - row * ph;
+        ctx.drawImage(state.currentImage, imgDrawX, imgDrawY, bw, bh);
+
+        // Subtle inner highlight bevel along top-left edges
+        if (!locked) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // Crisp outline stroke
+        tracePiecePath(ctx, x, y, pw, ph, edges);
+        if (locked) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.32)';
+          ctx.lineWidth = 1;
+        } else {
+          ctx.strokeStyle = isDragged ? '#FF9F1C' : 'rgba(45, 49, 66, 0.45)';
+          ctx.lineWidth = isDragged ? 3 : 1.75;
+        }
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      function render() {
+        const rect = wrapper.getBoundingClientRect();
+        const W = rect.width;
+        const H = rect.height;
+
+        ctx.clearRect(0, 0, W, H);
+
+        // Warm playful dot grid background
+        ctx.fillStyle = '#FFF8EB';
+        ctx.fillRect(0, 0, W, H);
+
+        // 1. Draw Piece Tray Mat
+        const { x: tx, y: ty, w: tw, h: th } = state.trayRect;
+        ctx.save();
+        drawRoundedRect(ctx, tx, ty, tw, th, 22);
+        ctx.fillStyle = '#FFF1D6';
+        ctx.fill();
+        ctx.setLineDash([10, 8]);
+        ctx.strokeStyle = '#F4C07A';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. Draw Puzzle Board Frame & Slot Grid
+        const { x: bx, y: by, w: bw, h: bh } = state.boardRect;
+        ctx.save();
+        drawRoundedRect(ctx, bx - 8, by - 8, bw + 16, bh + 16, 20);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.shadowColor = 'rgba(45, 49, 66, 0.12)';
+        ctx.shadowBlur = 16;
+        ctx.shadowOffsetY = 6;
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = '#F3EFE6';
+        ctx.fillRect(bx, by, bw, bh);
+
+        // Toggleable Ghost Guide (25% opacity preview of completed picture)
+        if (state.showGhostGuide && state.currentImage) {
+          ctx.save();
+          ctx.globalAlpha = 0.25;
+          ctx.drawImage(state.currentImage, bx, by, bw, bh);
+          ctx.restore();
+        }
+
+        // Faint slot grid lines so toddlers see target zones
+        const preset = GRID_PRESETS[state.presetIndex] || GRID_PRESETS[0];
+        ctx.strokeStyle = 'rgba(45, 49, 66, 0.12)';
+        ctx.lineWidth = 1.25;
+        const cellW = bw / preset.cols;
+        const cellH = bh / preset.rows;
+        for (let c = 1; c < preset.cols; c++) {
+          ctx.beginPath();
+          ctx.moveTo(bx + c * cellW, by);
+          ctx.lineTo(bx + c * cellW, by + bh);
+          ctx.stroke();
+        }
+        for (let r = 1; r < preset.rows; r++) {
+          ctx.beginPath();
+          ctx.moveTo(bx, by + r * cellH);
+          ctx.lineTo(bx + bw, by + r * cellH);
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = '#F4A261';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.restore();
+
+        // 3. Render Locked Pieces FIRST (bottom layer so loose pieces never get hidden underneath)
+        for (let i = 0; i < state.pieces.length; i++) {
+          const p = state.pieces[i];
+          if (p.locked) {
+            drawSinglePiece(p, false);
+          }
+        }
+
+        // 4. Render Loose Pieces (except currently dragged piece)
+        for (let i = 0; i < state.pieces.length; i++) {
+          const p = state.pieces[i];
+          if (!p.locked && p !== state.draggingPiece) {
+            drawSinglePiece(p, false);
+          }
+        }
+
+        // 5. Render Actively Dragged Piece on Top
+        if (state.draggingPiece) {
+          drawSinglePiece(state.draggingPiece, true);
+        }
+
+        // 6. Render Celebration Confetti if active
+        if (state.confetti.length > 0) {
+          state.confetti.forEach(c => {
+            ctx.save();
+            ctx.translate(c.x, c.y);
+            ctx.rotate(c.rot);
+            ctx.fillStyle = c.color;
+            ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h);
+            ctx.restore();
+          });
+        }
+      }
+
+      /* ==========================================================================
+         8. ANIMATION LOOP (SNAP POP & CONFETTI)
+         ========================================================================== */
+
+      function triggerConfetti() {
+        const rect = wrapper.getBoundingClientRect();
+        const colours = ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#6A4C93', '#FF9F1C'];
+        state.confetti = Array.from({ length: 120 }, () => ({
+          x: Math.random() * rect.width,
+          y: -20 - Math.random() * rect.height * 0.5,
+          vx: (Math.random() - 0.5) * 4,
+          vy: 2.5 + Math.random() * 4.5,
+          w: 10 + Math.random() * 8,
+          h: 6 + Math.random() * 6,
+          rot: Math.random() * Math.PI * 2,
+          vrot: (Math.random() - 0.5) * 0.18,
+          color: colours[Math.floor(Math.random() * colours.length)]
+        }));
+        startAnimationLoop();
+      }
+
+      function startAnimationLoop() {
+        if (state.animFrameId) return;
+        function step() {
+          let needsAnotherFrame = false;
+
+          // Update snap animations
+          state.pieces.forEach(p => {
+            if (p.snapAnim > 0) {
+              p.snapAnim = Math.max(0, p.snapAnim - 0.06);
+              needsAnotherFrame = true;
+            }
+          });
+
+          // Update confetti
+          if (state.confetti.length > 0) {
+            const rect = wrapper.getBoundingClientRect();
+            state.confetti.forEach(c => {
+              c.x += c.vx;
+              c.y += c.vy;
+              c.rot += c.vrot;
+            });
+            state.confetti = state.confetti.filter(c => c.y < rect.height + 40);
+            if (state.confetti.length > 0) needsAnotherFrame = true;
+          }
+
+          render();
+
+          if (needsAnotherFrame) {
+            state.animFrameId = requestAnimationFrame(step);
+          } else {
+            state.animFrameId = null;
+          }
+        }
+        state.animFrameId = requestAnimationFrame(step);
+      }
+
+      /* ==========================================================================
+         9. UNIFIED POINTER EVENTS (TOUCH & MOUSE DRAGGING + MAGNETIC SNAP)
+         ========================================================================== */
+
+      function getCanvasCoords(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        };
+      }
+
+      /**
+       * Finds the topmost unlocked piece under pointer (x, y).
+       * Includes generous tab padding so little fingers grab pieces effortlessly.
+       */
+      function hitTestPiece(px, py) {
+        for (let i = state.pieces.length - 1; i >= 0; i--) {
+          const p = state.pieces[i];
+          if (p.locked) continue;
+
+          const pad = Math.min(p.pw, p.ph) * 0.22;
+          if (
+            px >= p.x - pad &&
+            px <= p.x + p.pw + pad &&
+            py >= p.y - pad &&
+            py <= p.y + p.ph + pad
+          ) {
+            return p;
+          }
+        }
+        return null;
+      }
+
+      function checkWinCondition() {
+        const allLocked = state.pieces.every(p => p.locked);
+        if (allLocked && !state.isSolved) {
+          state.isSolved = true;
+          playVictoryMelody();
+          triggerConfetti();
+          setTimeout(() => {
+            victoryOverlay.classList.remove('hidden');
+          }, 450);
+        }
+      }
+
+      canvas.addEventListener('pointerdown', (e) => {
+        if (state.isSolved || state.draggingPiece) return;
+        ensureAudioContext();
+
+        const pos = getCanvasCoords(e);
+        const hit = hitTestPiece(pos.x, pos.y);
+        if (!hit) return;
+
+        // Bring grabbed piece to top of loose piece z-order
+        const idx = state.pieces.indexOf(hit);
+        if (idx > -1) {
+          state.pieces.splice(idx, 1);
+          state.pieces.push(hit);
+        }
+
+        state.draggingPiece = hit;
+        state.activePointerId = e.pointerId;
+        state.dragOffsetX = pos.x - hit.x;
+        state.dragOffsetY = pos.y - hit.y;
+
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch (_) {}
+
+        playPickSound();
+        render();
+      });
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!state.draggingPiece || e.pointerId !== state.activePointerId) return;
+        const pos = getCanvasCoords(e);
+        const rect = wrapper.getBoundingClientRect();
+        const p = state.draggingPiece;
+
+        // Keep piece within visible arena bounds
+        const margin = p.pw * 0.15;
+        let nextX = pos.x - state.dragOffsetX;
+        let nextY = pos.y - state.dragOffsetY;
+        nextX = Math.max(-margin, Math.min(rect.width - p.pw + margin, nextX));
+        nextY = Math.max(-margin, Math.min(rect.height - p.ph + margin, nextY));
+
+        p.x = nextX;
+        p.y = nextY;
+        render();
+      });
+
+      function finishDrag(e) {
+        if (!state.draggingPiece || e.pointerId !== state.activePointerId) return;
+        const p = state.draggingPiece;
+
+        try {
+          canvas.releasePointerCapture(e.pointerId);
+        } catch (_) {}
+
+        state.draggingPiece = null;
+        state.activePointerId = null;
+
+        // Proportional magnetic snap radius (~25% of piece width, minimum 30px)
+        const snapThreshold = Math.max(30, Math.min(p.pw, p.ph) * 0.25);
+        const dist = Math.hypot(p.x - p.targetX, p.y - p.targetY);
+
+        if (dist <= snapThreshold) {
+          p.x = p.targetX;
+          p.y = p.targetY;
+          p.locked = true;
+          p.snapAnim = 1;
+          playSnapChime();
+          startAnimationLoop();
+          checkWinCondition();
+        } else {
+          render();
+        }
+      }
+
+      canvas.addEventListener('pointerup', finishDrag);
+      canvas.addEventListener('pointercancel', finishDrag);
+
+      /* ==========================================================================
+         10. GALLERY, CUSTOM PHOTO RESIZING & OFFLINE LOCALSTORAGE PERSISTENCE
+         ========================================================================== */
+
+      function loadPreferences() {
+        try {
+          const savedPhotos = localStorage.getItem(STORAGE_KEYS.CUSTOM_PHOTOS);
+          if (savedPhotos) {
+            state.customPhotos = JSON.parse(savedPhotos);
+          }
+          const savedGuide = localStorage.getItem(STORAGE_KEYS.GUIDE_ENABLED);
+          if (savedGuide !== null) {
+            state.showGhostGuide = savedGuide === 'true';
+          }
+          const savedSound = localStorage.getItem(STORAGE_KEYS.SOUND_ENABLED);
+          if (savedSound !== null) {
+            state.soundEnabled = savedSound === 'true';
+          }
+          const savedPreset = localStorage.getItem(STORAGE_KEYS.PRESET_INDEX);
+          if (savedPreset !== null) {
+            const parsed = parseInt(savedPreset, 10);
+            if (!Number.isNaN(parsed) && GRID_PRESETS[parsed]) {
+              state.presetIndex = parsed;
+            }
+          }
+        } catch (err) {
+          console.warn('Could not read saved preferences:', err);
+        }
+      }
+
+      function saveCustomPhotos() {
+        try {
+          localStorage.setItem(STORAGE_KEYS.CUSTOM_PHOTOS, JSON.stringify(state.customPhotos));
+        } catch (err) {
+          showToast('Storage full! Try deleting an older custom photo first.');
+        }
+      }
+
+      /**
+       * Resizes uploaded photo to max 1024px via offscreen canvas and encodes as JPEG Base64.
+       */
+      function resizeAndEncodeImage(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+              const MAX_DIM = 1024;
+              let w = img.naturalWidth;
+              let h = img.naturalHeight;
+              if (w > MAX_DIM || h > MAX_DIM) {
+                if (w >= h) {
+                  h = Math.round((h * MAX_DIM) / w);
+                  w = MAX_DIM;
+                } else {
+                  w = Math.round((w * MAX_DIM) / h);
+                  h = MAX_DIM;
+                }
+              }
+              const offCanvas = document.createElement('canvas');
+              offCanvas.width = w;
+              offCanvas.height = h;
+              const offCtx = offCanvas.getContext('2d');
+              offCtx.drawImage(img, 0, 0, w, h);
+              resolve(offCanvas.toDataURL('image/jpeg', 0.85));
+            };
+            img.onerror = reject;
+            img.src = reader.result;
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function selectArtwork(artwork) {
+        const img = new Image();
+        img.onload = () => {
+          state.currentImage = img;
+          state.currentImageId = artwork.id;
+          galleryModal.classList.add('hidden');
+          buildPuzzle();
+        };
+        img.src = artwork.dataUrl;
+      }
+
+      function renderGalleryModal() {
+        // Render built-in artworks
+        builtinGrid.innerHTML = '';
+        BUILTIN_ARTWORKS.forEach(art => {
+          const isSelected = state.currentImageId === art.id;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = `group relative rounded-2xl overflow-hidden border-4 transition-transform active:scale-95 bg-amber-50 flex flex-col ${
+            isSelected ? 'border-emerald-500 ring-2 ring-emerald-300' : 'border-amber-200 hover:border-amber-400'
+          }`;
+          card.innerHTML = `
+            <img src="${art.dataUrl}" alt="${art.name}" class="w-full aspect-square object-cover" />
+            <div class="p-2 text-center font-bold text-slate-800 text-sm sm:text-base bg-white w-full">${art.name}</div>
+          `;
+          card.addEventListener('click', () => selectArtwork(art));
+          builtinGrid.appendChild(card);
+        });
+
+        // Render saved custom photos
+        customGrid.innerHTML = '';
+        if (state.customPhotos.length > 0) {
+          customSection.classList.remove('hidden');
+          state.customPhotos.forEach(photo => {
+            const isSelected = state.currentImageId === photo.id;
+            const wrapperDiv = document.createElement('div');
+            wrapperDiv.className = `relative rounded-2xl overflow-hidden border-4 bg-slate-100 ${
+              isSelected ? 'border-emerald-500 ring-2 ring-emerald-300' : 'border-sky-200'
+            }`;
+
+            const selectBtn = document.createElement('button');
+            selectBtn.type = 'button';
+            selectBtn.className = 'w-full block text-left focus:outline-none';
+            selectBtn.innerHTML = `
+              <img src="${photo.dataUrl}" alt="${photo.name}" class="w-full aspect-square object-cover" />
+            `;
+            selectBtn.addEventListener('click', () => selectArtwork(photo));
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'absolute top-2 right-2 w-10 h-10 rounded-full bg-rose-500 hover:bg-rose-600 text-white font-bold shadow-md flex items-center justify-center text-lg';
+            delBtn.title = 'Delete Photo';
+            delBtn.setAttribute('aria-label', 'Delete Photo');
+            delBtn.textContent = '🗑️';
+            delBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              state.customPhotos = state.customPhotos.filter(item => item.id !== photo.id);
+              saveCustomPhotos();
+              renderGalleryModal();
+              showToast('Photo removed');
+              if (state.currentImageId === photo.id) {
+                selectArtwork(BUILTIN_ARTWORKS[0]);
+              }
+            });
+
+            wrapperDiv.appendChild(selectBtn);
+            wrapperDiv.appendChild(delBtn);
+            customGrid.appendChild(wrapperDiv);
+          });
+        } else {
+          customSection.classList.add('hidden');
+        }
+      }
+
+      /* ==========================================================================
+         11. TOOLBAR CONTROLS & EVENT BINDINGS
+         ========================================================================== */
+
+      function renderDifficultyButtons() {
+        difficultyGroup.innerHTML = '';
+        GRID_PRESETS.forEach((preset, index) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          const active = index === state.presetIndex;
+          btn.textContent = preset.label;
+          btn.className = `chunky-btn px-3 sm:px-3.5 text-sm sm:text-base ${
+            active
+              ? 'bg-orange-500 text-white'
+              : 'bg-white hover:bg-amber-50 text-slate-800'
+          }`;
+          btn.setAttribute('aria-pressed', String(active));
+          btn.addEventListener('click', () => {
+            if (state.presetIndex === index) return;
+            state.presetIndex = index;
+            try {
+              localStorage.setItem(STORAGE_KEYS.PRESET_INDEX, String(index));
+            } catch (_) {}
+            renderDifficultyButtons();
+            buildPuzzle();
+          });
+          difficultyGroup.appendChild(btn);
+        });
+      }
+
+      function updateGuideButtonUI() {
+        btnGuide.setAttribute('aria-pressed', String(state.showGhostGuide));
+        if (state.showGhostGuide) {
+          btnGuide.classList.remove('bg-slate-200', 'text-slate-700');
+          btnGuide.classList.add('bg-emerald-500', 'text-white');
+        } else {
+          btnGuide.classList.remove('bg-emerald-500', 'text-white');
+          btnGuide.classList.add('bg-slate-200', 'text-slate-700');
+        }
+      }
+
+      function updateSoundButtonUI() {
+        btnSound.setAttribute('aria-pressed', String(state.soundEnabled));
+        btnSound.textContent = state.soundEnabled ? '🔊' : '🔇';
+      }
+
+      btnGuide.addEventListener('click', () => {
+        state.showGhostGuide = !state.showGhostGuide;
+        try {
+          localStorage.setItem(STORAGE_KEYS.GUIDE_ENABLED, String(state.showGhostGuide));
+        } catch (_) {}
+        updateGuideButtonUI();
+        render();
+      });
+
+      btnSound.addEventListener('click', () => {
+        state.soundEnabled = !state.soundEnabled;
+        try {
+          localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, String(state.soundEnabled));
+        } catch (_) {}
+        updateSoundButtonUI();
+        if (state.soundEnabled) {
+          ensureAudioContext();
+          playPickSound();
+        }
+      });
+
+      btnRestart.addEventListener('click', () => {
+        buildPuzzle();
+      });
+
+      btnPlayAgain.addEventListener('click', () => {
+        buildPuzzle();
+      });
+
+      btnNextPic.addEventListener('click', () => {
+        victoryOverlay.classList.add('hidden');
+        const allItems = [...BUILTIN_ARTWORKS, ...state.customPhotos];
+        const currIdx = allItems.findIndex(item => item.id === state.currentImageId);
+        const nextItem = allItems[(currIdx + 1) % allItems.length] || BUILTIN_ARTWORKS[0];
+        selectArtwork(nextItem);
+      });
+
+      btnGallery.addEventListener('click', () => {
+        renderGalleryModal();
+        galleryModal.classList.remove('hidden');
+      });
+
+      btnCloseGallery.addEventListener('click', () => {
+        galleryModal.classList.add('hidden');
+      });
+
+      galleryModal.addEventListener('click', (e) => {
+        if (e.target === galleryModal) {
+          galleryModal.classList.add('hidden');
+        }
+      });
+
+      inputPhoto.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        try {
+          const dataUrl = await resizeAndEncodeImage(file);
+          const newPhoto = {
+            id: 'custom-' + Date.now(),
+            name: file.name ? file.name.replace(/\.[^/.]+$/, '') : 'Family Photo',
+            dataUrl
+          };
+          state.customPhotos.unshift(newPhoto);
+          saveCustomPhotos();
+          renderGalleryModal();
+          selectArtwork(newPhoto);
+          showToast('Photo added and saved offline!');
+        } catch (err) {
+          showToast('Could not load that image. Please try another.');
+        } finally {
+          inputPhoto.value = '';
+        }
+      });
+
+      window.addEventListener('resize', handleResize);
+      window.addEventListener('orientationchange', () => {
+        setTimeout(handleResize, 120);
+      });
+
+      /* ==========================================================================
+         12. SELF-CONTAINED PWA MANIFEST & INLINE SERVICE WORKER
+         ========================================================================== */
+      function initSelfContainedPWA() {
+        try {
+          const appIconSvg = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+              <rect width="512" height="512" rx="112" fill="#FF9F1C"/>
+              <path d="M150 150 h85 a32 32 0 1 1 42 0 h85 v85 a32 32 0 1 1 0 42 v85 h-85 a32 32 0 1 0 -42 0 h-85 v-85 a32 32 0 1 0 0 -42 z" fill="#FFFFFF"/>
+            </svg>
+          `.trim();
+          const iconDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(appIconSvg);
+
+          const appleIcon = document.getElementById('apple-touch-icon');
+          if (appleIcon) appleIcon.href = iconDataUrl;
+
+          const manifestObj = {
+            name: 'Little Puzzlers — Jigsaw Game',
+            short_name: 'Jigsaw',
+            start_url: window.location.href,
+            display: 'standalone',
+            background_color: '#FFF8EB',
+            theme_color: '#FF9F1C',
+            icons: [
+              {
+                src: iconDataUrl,
+                sizes: '512x512',
+                type: 'image/svg+xml',
+                purpose: 'any maskable'
+              }
+            ]
+          };
+
+          const manifestBlob = new Blob([JSON.stringify(manifestObj)], { type: 'application/manifest+json' });
+          const manifestUrl = URL.createObjectURL(manifestBlob);
+          const manifestLink = document.getElementById('pwa-manifest');
+          if (manifestLink) manifestLink.href = manifestUrl;
+
+          // Register inline Service Worker when served over HTTPS or localhost
+          if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
+            const swCode = `
+              const CACHE_NAME = 'little-puzzlers-v1';
+              self.addEventListener('install', (event) => {
+                self.skipWaiting();
+              });
+              self.addEventListener('activate', (event) => {
+                event.waitUntil(self.clients.claim());
+              });
+              self.addEventListener('fetch', (event) => {
+                if (event.request.method !== 'GET') return;
+                event.respondWith(
+                  caches.open(CACHE_NAME).then((cache) =>
+                    cache.match(event.request).then((cached) => {
+                      const fetched = fetch(event.request).then((response) => {
+                        if (response && response.status === 200) {
+                          cache.put(event.request, response.clone());
+                        }
+                        return response;
+                      }).catch(() => cached);
+                      return cached || fetched;
+                    })
+                  )
+                );
+              });
+            `;
+            const swBlob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(swBlob);
+            navigator.serviceWorker.register(swUrl).catch(() => {});
+          }
+        } catch (err) {
+          // Safe fallback when previewed inside sandboxed iframes
+        }
+      }
+
+      /* ==========================================================================
+         13. BOOTSTRAP APPLICATION
+         ========================================================================== */
+      window.addEventListener('load', () => {
+        loadPreferences();
+        renderDifficultyButtons();
+        updateGuideButtonUI();
+        updateSoundButtonUI();
+        handleResize();
+        initSelfContainedPWA();
+        selectArtwork(BUILTIN_ARTWORKS[0]);
+      });
+    })();
+  </script>
+</body>
+</html>
